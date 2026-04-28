@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Vital Minutes - Guest</title>
+</head>
+
+<body style="
+margin:0;
+font-family:Segoe UI, sans-serif;
+background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+color:white;
+display:flex;
+justify-content:center;
+align-items:center;
+height:100vh;
+">
+
+    <!-- 📢 Broadcast -->
+    <div id="broadcastBox" style="
+position:fixed;
+top:0;
+width:100%;
+background:#ffcc00;
+color:black;
+padding:10px;
+text-align:center;
+display:none;
+z-index:1000;
+">
+        📢 <span id="broadcastMsg"></span>
+    </div>
+
+    <!-- 🚨 Full screen alert -->
+    <div id="overlay" style="
+display:none;
+position:fixed;
+top:0;left:0;
+width:100%;height:100%;
+background:rgba(255,0,0,0.9);
+color:white;
+justify-content:center;
+align-items:center;
+flex-direction:column;
+z-index:2000;
+">
+        <h1 id="overlayText"></h1>
+        <button onclick="closeOverlay()" style="
+    padding:10px 20px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    ">Close</button>
+    </div>
+
+    <!-- MAIN CARD -->
+    <div style="
+backdrop-filter:blur(20px);
+background:rgba(255,255,255,0.08);
+padding:30px;
+border-radius:20px;
+box-shadow:0 8px 32px rgba(0,0,0,0.4);
+width:350px;
+text-align:center;
+">
+
+        <h2 style="margin-bottom:20px;">🚨 Emergency SOS</h2>
+
+        <!-- BUTTONS -->
+        <div style="display:flex;gap:12px;margin-bottom:22px;">
+
+            <!-- FIRE -->
+            <button onclick="quickSOS('Fire')" style="
+    flex:1;
+    padding:14px;
+    border:none;
+    border-radius:14px;
+    background:linear-gradient(135deg,#8b0000,#b22222);
+    color:#fff;
+    font-weight:600;
+    font-size:14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    cursor:pointer;
+    box-shadow:0 6px 18px rgba(139,0,0,0.5);
+    transition:all 0.2s ease;
+    ">
+                🔥 Fire
+            </button>
+
+            <!-- MEDICAL -->
+            <button onclick="quickSOS('Medical')" style="
+    flex:1;
+    padding:14px;
+    border:none;
+    border-radius:14px;
+    background:linear-gradient(135deg,#0b3d91,#1e5eff);
+    color:#fff;
+    font-weight:600;
+    font-size:14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    cursor:pointer;
+    box-shadow:0 6px 18px rgba(0,60,150,0.5);
+    transition:all 0.2s ease;
+    ">
+                🚑 Medical
+            </button>
+
+            <!-- SECURITY -->
+            <button onclick="quickSOS('Security')" style="
+    flex:1;
+    padding:14px;
+    border:none;
+    border-radius:14px;
+    background:linear-gradient(135deg,#5a3e00,#c28b00);
+    color:#fff;
+    font-weight:600;
+    font-size:14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    cursor:pointer;
+    box-shadow:0 6px 18px rgba(90,62,0,0.5);
+    transition:all 0.2s ease;
+    ">
+                ⚠️ Security
+            </button>
+
+        </div>
+
+        <!-- TEXTAREA -->
+        <textarea id="msg" placeholder="Describe emergency..." style="
+width:100%;
+padding:12px;
+border-radius:12px;
+border:none;
+outline:none;
+background:rgba(255,255,255,0.15);
+color:white;
+margin-bottom:15px;
+"></textarea>
+
+        <!-- BUTTON -->
+        <button onclick="sendSOS()" style="
+width:100%;
+padding:14px;
+border:none;
+border-radius:12px;
+background:#00c6ff;
+color:black;
+font-weight:bold;
+cursor:pointer;
+">
+            Send SOS
+        </button>
+
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getFirestore, addDoc, collection, onSnapshot, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCXcjJHnLbi1GvzRTTgFxzDIBHOgzxXHMM",
+            authDomain: "appy-e569d.firebaseapp.com",
+            projectId: "appy-e569d"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // ✅ RULE ENGINE (ADD THIS)
+        function classifyEmergency(message) {
+            const msg = message.toLowerCase();
+
+            const keywords = {
+                Fire: ["fire", "smoke", "burn", "flame", "explosion"],
+                Medical: ["injury", "bleeding", "unconscious", "collapse", "faint"],
+                Security: ["weapon", "gun", "knife", "threat", "attack"],
+                Evacuation: ["evacuate", "exit", "leave"]
+            };
+
+            let scores = { Fire: 0, Medical: 0, Security: 0, Evacuation: 0 };
+
+            for (let type in keywords) {
+                keywords[type].forEach(word => {
+                    if (msg.includes(word)) scores[type] += 2;
+                });
+            }
+
+            let type = "Other";
+            let max = 0;
+
+            for (let t in scores) {
+                if (scores[t] > max) {
+                    max = scores[t];
+                    type = t;
+                }
+            }
+
+            let severity = max >= 4 ? "High" : "Medium";
+
+            return { type, severity, confidence: max };
+        }
+
+        // Buttons
+        window.quickSOS = (type) => {
+            document.getElementById("msg").value = type + " emergency!";
+        };
+
+        // Broadcast listener
+        const qB = query(collection(db, "broadcasts"), orderBy("time", "desc"), limit(1));
+
+        onSnapshot(qB, (snap) => {
+            snap.forEach(doc => {
+                const data = doc.data();
+
+                document.getElementById("broadcastBox").style.display = "block";
+                document.getElementById("broadcastMsg").innerText = data.message;
+
+                document.getElementById("overlay").style.display = "flex";
+                document.getElementById("overlayText").innerText = data.message;
+            });
+        });
+
+        window.closeOverlay = () => {
+            document.getElementById("overlay").style.display = "none";
+        };
+
+        // ✅ FIXED SEND SOS
+        window.sendSOS = async () => {
+            const message = document.getElementById("msg").value;
+
+            if (!message) return alert("Enter message");
+
+            let parsed = {
+                type: "Other",
+                severity: "Medium",
+                location: "Not specified",
+                summary: message
+            };
+
+            // 🧠 RULE FIRST
+            const rule = classifyEmergency(message);
+
+            if (rule.confidence >= 3) {
+                parsed.type = rule.type;
+                parsed.severity = rule.severity;
+            } else {
+                try {
+                    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSyCJMzNvHr5FzUqIwac6V0ZSvCqv5APD3R0", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [{
+                                    text: `Return ONLY JSON:
+{"type":"","severity":"","location":"","summary":""}
+Message: "${message}"`
+                                }]
+                            }]
+                        })
+                    });
+
+                    const data = await res.json();
+                    let text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+                    text = text.replace(/```json/g, "").replace(/```/g, "").trim();
+
+                    const ai = JSON.parse(text);
+                    parsed = { ...parsed, ...ai };
+
+                } catch (e) {
+                    console.warn("AI failed → using rules");
+                    parsed.type = rule.type;
+                    parsed.severity = rule.severity;
+                }
+            }
+
+            // ✅ VALIDATION
+            const validTypes = ["Fire", "Medical", "Security", "Evacuation", "Other"];
+            const validSeverity = ["Low", "Medium", "High", "Critical"];
+
+            if (!validTypes.includes(parsed.type)) parsed.type = "Other";
+            if (!validSeverity.includes(parsed.severity)) parsed.severity = "Medium";
+            // 📍 LOCATION (ADD THIS BACK)
+            let lat = null, lng = null;
+
+            await new Promise(resolve => {
+                navigator.geolocation.getCurrentPosition(
+                    pos => {
+                        lat = pos.coords.latitude;
+                        lng = pos.coords.longitude;
+                        resolve();
+                    },
+                    () => resolve() // fallback if denied
+                );
+            });
+
+            // SAVE
+            await addDoc(collection(db, "alerts"), {
+                ...parsed,
+                raw: message,
+                lat,
+                lng,
+                status: "pending",
+                time: new Date()
+            });
+
+            alert("SOS sent!");
+            document.getElementById("msg").value = "";
+        };
+    </script>
+
+</body>
+
+</html>

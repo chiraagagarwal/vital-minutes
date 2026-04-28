@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Vital Minutes - Command Center</title>
+</head>
+
+<body style="
+margin:0;
+font-family:Segoe UI, sans-serif;
+background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+color:white;
+">
+
+    <div style="max-width:1100px;margin:auto;padding:20px;">
+
+        <!-- HEADER -->
+        <div style="
+    backdrop-filter:blur(20px);
+    background:rgba(255,255,255,0.08);
+    padding:25px;
+    border-radius:16px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.3);
+    margin-bottom:20px;
+    ">
+
+            <h2 style="margin-bottom:20px;">🚨 Command Center</h2>
+
+            <!-- STATS -->
+            <div style="display:flex;gap:15px;margin-bottom:15px;">
+
+                <div style="
+            flex:1;
+            padding:15px;
+            border-radius:12px;
+            background:rgba(255,255,255,0.1);
+            text-align:center;
+            ">
+                    Total<br><span id="total" style="font-size:24px;font-weight:bold;">0</span>
+                </div>
+
+                <div style="
+            flex:1;
+            padding:15px;
+            border-radius:12px;
+            background:rgba(255,255,255,0.1);
+            text-align:center;
+            ">
+                    High<br><span id="high" style="font-size:24px;font-weight:bold;">0</span>
+                </div>
+
+                <div style="
+            flex:1;
+            padding:15px;
+            border-radius:12px;
+            background:rgba(255,255,255,0.1);
+            text-align:center;
+            ">
+                    Pending<br><span id="pending" style="font-size:24px;font-weight:bold;">0</span>
+                </div>
+
+            </div>
+
+            <!-- BROADCAST -->
+            <div style="display:flex;gap:10px;">
+                <input id="bmsg" placeholder="Broadcast message..." style="
+                flex:1;
+                padding:12px;
+                border-radius:10px;
+                border:none;
+                background:rgba(255,255,255,0.15);
+                color:white;
+                outline:none;
+                ">
+
+                <button onclick="sendBroadcast()" style="
+                background:#00c6ff;
+                border:none;
+                padding:12px 20px;
+                border-radius:10px;
+                font-weight:bold;
+                cursor:pointer;
+                ">
+                    Send
+                </button>
+            </div>
+
+        </div>
+
+        <!-- ALERTS -->
+        <div id="alerts" style="display:flex;flex-direction:column;gap:15px;"></div>
+
+    </div>
+
+    <script type="module">
+        function classifyEmergency(message) {
+            const msg = message.toLowerCase();
+
+            // 🔥 Keyword weights
+            const keywords = {
+                Fire: ["fire", "smoke", "burn", "flame", "explosion", "blast"],
+                Medical: ["injury", "bleeding", "unconscious", "collapse", "faint", "hurt", "ambulance"],
+                Security: ["weapon", "gun", "knife", "threat", "suspicious", "attack", "intruder"],
+                Evacuation: ["evacuate", "exit", "leave", "alarm", "emergency exit"]
+            };
+
+            let scores = {
+                Fire: 0,
+                Medical: 0,
+                Security: 0,
+                Evacuation: 0
+            };
+
+            // 🧮 Score based on keywords
+            for (let type in keywords) {
+                keywords[type].forEach(word => {
+                    if (msg.includes(word)) scores[type] += 2;
+                });
+            }
+
+            // ⚡ Pattern boosts
+            if (msg.includes("smoke coming") || msg.includes("fire in")) {
+                scores.Fire += 3;
+            }
+
+            if (msg.includes("person collapsed") || msg.includes("not breathing")) {
+                scores.Medical += 3;
+            }
+
+            if (msg.includes("with weapon") || msg.includes("armed")) {
+                scores.Security += 3;
+            }
+
+            if (msg.includes("need to evacuate")) {
+                scores.Evacuation += 3;
+            }
+
+            // 🎯 Pick highest score
+            let type = "Other";
+            let maxScore = 0;
+
+            for (let t in scores) {
+                if (scores[t] > maxScore) {
+                    maxScore = scores[t];
+                    type = t;
+                }
+            }
+
+            // ⚠️ Severity scoring
+            let severity = "Low";
+
+            if (msg.includes("immediately") || msg.includes("urgent")) severity = "High";
+            if (msg.includes("explosion") || msg.includes("gun") || msg.includes("not breathing")) severity = "Critical";
+            if (maxScore >= 4) severity = "High";
+
+            return {
+                type,
+                severity,
+                confidence: maxScore
+            };
+        }
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getFirestore, collection, onSnapshot, query, orderBy, addDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCXcjJHnLbi1GvzRTTgFxzDIBHOgzxXHMM",
+            authDomain: "appy-e569d.firebaseapp.com",
+            projectId: "appy-e569d"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Broadcast
+        window.sendBroadcast = async () => {
+            const msg = document.getElementById("bmsg").value;
+            if (!msg) return alert("Enter message");
+
+            await addDoc(collection(db, "broadcasts"), {
+                message: msg,
+                time: new Date()
+            });
+
+            alert("Broadcast sent!");
+            document.getElementById("bmsg").value = "";
+        };
+
+        // Claim
+        window.claim = async (id) => {
+            await updateDoc(doc(db, "alerts", id), { status: "responding" });
+        };
+
+        // Alerts listener
+        const q = query(collection(db, "alerts"), orderBy("time", "desc"));
+
+        onSnapshot(q, (snap) => {
+            let html = "";
+            let total = 0, high = 0, pending = 0;
+
+            snap.forEach(d => {
+                const data = d.data();
+                total++;
+
+                if (data.severity === "High") high++;
+                if (data.status !== "responding") pending++;
+
+                // severity color
+                let borderColor = "#ffaa00";
+                if (data.severity === "High") borderColor = "#ff4d4d";
+                if (data.severity === "Low") borderColor = "#00ffcc";
+
+                html += `
+        <div style="
+        backdrop-filter:blur(15px);
+        background:rgba(255,255,255,0.08);
+        padding:15px;
+        border-radius:12px;
+        box-shadow:0 4px 20px rgba(0,0,0,0.3);
+        border-left:6px solid ${borderColor};
+        ">
+
+            <b>${data.type || "General"}</b><br>
+            Severity: ${data.severity}<br>
+            Location: ${data.location}<br>
+            <p>${data.summary}</p>
+
+            ${data.lat && data.lng ? `
+            <a target="_blank" href="https://maps.google.com?q=${data.lat},${data.lng}" style="color:#00c6ff;">
+                📍 View Map
+            </a><br>` : ""}
+
+            ${data.status === "responding"
+                        ? `<span style="color:#00ffcc;font-weight:bold;">✓ Responding</span>`
+                        : `<button onclick="claim('${d.id}')" 
+                    style="
+                    margin-top:10px;
+                    background:#00ffcc;
+                    border:none;
+                    padding:8px 14px;
+                    border-radius:8px;
+                    cursor:pointer;
+                    ">
+                    Claim
+                  </button>`
+                    }
+
+        </div>
+        `;
+            });
+
+            document.getElementById("alerts").innerHTML = html;
+            document.getElementById("total").innerText = total;
+            document.getElementById("high").innerText = high;
+            document.getElementById("pending").innerText = pending;
+        });
+    </script>
+
+</body>
+
+</html>
